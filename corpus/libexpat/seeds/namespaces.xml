@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<r xmlns:a="urn:a" xmlns:b="urn:b">
+  <a:x b:k="v">inner</a:x>
+</r>

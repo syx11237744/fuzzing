@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<!DOCTYPE r [
+  <!ENTITY hi "hello">
+  <!ENTITY % p "world">
+]>
+<r>&hi; &amp; &#x41;</r>
