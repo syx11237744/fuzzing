@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "marker-pdf",
+    "matplotlib>=3.10.9",
     "psutil>=7.2.2",
     "python-docx>=1.2.0",
     "unstructured>=0.22.31",
