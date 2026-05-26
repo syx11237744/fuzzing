@@ -1,19 +1,11 @@
 #!/usr/bin/env bash
 # Group fuzz crash artifacts by their root-cause signature.
-#
-# Two signature sources, in order of preference:
-#   1. ASan `SUMMARY:` line  (memory-safety crashes)
-#   2. "fuzz target exited"  (target called exit()/abort() outside ASan)
-#      — paired with the topmost user-code stack frame
-#
-# Usage:
-#   ./harness/<proj>/dedup.sh
-#   BIN=build/fuzz_xxx FINDINGS=build/findings/xxx ./harness/<proj>/dedup.sh
+# See harness/libucl/dedup.sh for full notes; this is the libconfig variant.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-BIN="${BIN:-$ROOT/build/fuzz_ucl}"
-FINDINGS="${FINDINGS:-$ROOT/build/findings/libucl}"
+BIN="${BIN:-$ROOT/build/fuzz_config}"
+FINDINGS="${FINDINGS:-$ROOT/build/findings/libconfig}"
 
 if [ ! -x "$BIN" ]; then
     echo "error: $BIN not found." >&2
@@ -27,8 +19,6 @@ if [ ${#artifacts[@]} -eq 0 ]; then
     exit 0
 fi
 
-# Filter pattern: stack frames we DON'T want as the bug-site signature.
-# These are libFuzzer/ASan/system frames that mask the actual root cause.
 NOISE_FRAMES='asan|sanitizer|FuzzerLoop|FuzzerDriver|FuzzerUtil|FuzzerMain|__cxa_finalize|dyld|libsystem|start\+|RunOneTest|ExecuteCallback|ExitCallback|PrintStackTrace'
 
 tmp=$(mktemp)
