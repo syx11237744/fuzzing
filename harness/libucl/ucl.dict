@@ -1,0 +1,90 @@
+# libFuzzer dictionary for libucl (UCL / JSON superset).
+# UCL accepts JSON syntax plus nginx-style configs, includes, macros, etc.
+
+# Key/value separators
+"="
+":"
+" => "
+
+# Statement separators
+";"
+","
+
+# Aggregates
+"{"
+"}"
+"["
+"]"
+
+# Strings
+"\"\""
+"''"
+
+# Boolean
+"true"
+"false"
+"yes"
+"no"
+"on"
+"off"
+"null"
+
+# Heredoc-style multiline strings
+"<<EOD"
+"EOD"
+
+# Macros (UCL extensions)
+".include"
+".includes"
+".include_optional"
+".try_include"
+".load"
+".priority"
+
+# Variable expansion
+"${"
+"}"
+
+# Comments
+"#"
+"//"
+"/*"
+"*/"
+
+# Numeric suffixes (units)
+"k"
+"K"
+"m"
+"M"
+"g"
+"G"
+"b"
+"B"
+"kb"
+"Mb"
+"Gb"
+"s"
+"min"
+"h"
+"d"
+
+# JSON-only tokens
+"0x"
+"e+"
+"e-"
+".0"
+
+# Escape sequences
+"\\n"
+"\\t"
+"\\\""
+"\\\\"
+"\\u"
+
+# Common keys observed in UCL config examples
+"section"
+"include"
+"path"
+"size"
+"name"
+"value"
