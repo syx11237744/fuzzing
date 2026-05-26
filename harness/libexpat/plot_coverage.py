@@ -27,9 +27,9 @@ from dataclasses import dataclass
 import matplotlib.pyplot as plt
 
 
-# Matches lines like:
+# Single-process libFuzzer progress line, e.g.:
 #   #244953351\tREDUCE cov: 4480 ft: 16997 corp: 8222/1520Kb lim: 4096 exec/s: 5715 rss: 698Mb ...
-PROGRESS_RE = re.compile(
+PROGRESS_RE_SINGLE = re.compile(
     r"^#(?P<execs>\d+)\s+\S+\s+"
     r"cov:\s+(?P<cov>\d+)\s+"
     r"ft:\s+(?P<ft>\d+)\s+"
@@ -38,7 +38,24 @@ PROGRESS_RE = re.compile(
     r"exec/s:\s+(?P<rate>\d+)"
 )
 
-DONE_RE = re.compile(r"^Done\s+(?P<execs>\d+)\s+runs\s+in\s+(?P<secs>\d+)\s+second")
+# Fork-mode (parent) progress line, e.g.:
+#   #7274464: cov: 1134 ft: 5976 corp: 1449 exec/s: 37559 oom/timeout/crash: 0/0/0 time: 193s job: 18 dft_time: 0
+# Crucially, fork mode includes `time: Xs` so no wall-clock reconstruction needed.
+PROGRESS_RE_FORK = re.compile(
+    r"^#(?P<execs>\d+):\s+"
+    r"cov:\s+(?P<cov>\d+)\s+"
+    r"ft:\s+(?P<ft>\d+)\s+"
+    r"corp:\s+\d+\s+"
+    r"exec/s:\s+(?P<rate>\d+)\s+"
+    r"oom/timeout/crash:\s+\S+\s+"
+    r"time:\s+(?P<time>\d+)s"
+)
+
+# End-of-run lines:
+#   single-process: "Done 245076849 runs in 43697 second(s)"
+#   fork mode:      "INFO: exiting: 0 time: 28s"
+DONE_RE_SINGLE = re.compile(r"^Done\s+(?P<execs>\d+)\s+runs\s+in\s+(?P<secs>\d+)\s+second")
+DONE_RE_FORK = re.compile(r"^INFO:\s+exiting:.*\stime:\s+(?P<secs>\d+)s")
 
 
 @dataclass
@@ -46,15 +63,32 @@ class Sample:
     execs: int
     cov: int
     ft: int
-    rate: int  # libFuzzer's reported exec/s at this point
+    rate: int                    # libFuzzer's reported exec/s
+    time_s: float | None = None  # wall-clock seconds (fork mode only)
 
 
-def parse_log(path: str) -> tuple[list[Sample], int | None]:
+def parse_log(path: str) -> tuple[list[Sample], int | None, str]:
+    """Parse a libFuzzer run log. Auto-detects single-process vs fork mode.
+    Returns (samples, total_secs, mode) where mode is 'single' or 'fork'."""
     samples: list[Sample] = []
     total_secs: int | None = None
+    mode = "single"  # assume until we see a fork-mode line
     with open(path, "r", errors="replace") as f:
         for line in f:
-            m = PROGRESS_RE.match(line)
+            m = PROGRESS_RE_FORK.match(line)
+            if m:
+                mode = "fork"
+                samples.append(
+                    Sample(
+                        execs=int(m["execs"]),
+                        cov=int(m["cov"]),
+                        ft=int(m["ft"]),
+                        rate=max(int(m["rate"]), 1),
+                        time_s=float(m["time"]),
+                    )
+                )
+                continue
+            m = PROGRESS_RE_SINGLE.match(line)
             if m:
                 samples.append(
                     Sample(
@@ -65,28 +99,42 @@ def parse_log(path: str) -> tuple[list[Sample], int | None]:
                     )
                 )
                 continue
-            m = DONE_RE.match(line)
+            m = DONE_RE_SINGLE.match(line)
             if m:
                 total_secs = int(m["secs"])
-    return samples, total_secs
+                continue
+            m = DONE_RE_FORK.match(line)
+            if m:
+                total_secs = int(m["secs"])
+    # In fork mode, also fall back to the last sample's time if the
+    # "exiting" line was missing (e.g., aborted run).
+    if mode == "fork" and total_secs is None and samples:
+        total_secs = int(samples[-1].time_s or 0) or None
+    return samples, total_secs, mode
 
 
 def reconstruct_time(samples: list[Sample], total_secs: int | None) -> list[float]:
-    """Map exec count to wall time.
+    """Map exec count (or use built-in time) to wall-clock seconds.
 
-    libFuzzer doesn't print wall-clock timestamps. Our two known anchors are
-    (execs=0, t=0) and (execs=final, t=total_secs). We use a linear mapping:
+    Fork-mode logs include `time: Xs` directly on every progress line — we
+    use that and skip reconstruction entirely.
+
+    Single-process logs have no timestamps. Two known anchors:
+    (execs=0, t=0) and (execs=final, t=total_secs). Linear mapping:
 
         t_i = execs_i * total_secs / final_execs
 
-    Naive exec/s-integration looked tempting (it preserves the shape of
-    fast/slow phases), but in practice libFuzzer reports `exec/s: 0` for
-    the first ~minute of a run, which produces wildly wrong time deltas.
-    Linear mapping is the most defensible reconstruction with the available
-    signals, and the error stays small as long as exec/s doesn't vary by
-    more than ~2x across the run.
+    Naive exec/s-integration was tempting (it preserves fast/slow phase
+    shape), but libFuzzer reports `exec/s: 0` during the first ~minute,
+    producing wildly wrong dt's. Linear mapping is the most defensible
+    fallback when wall time isn't logged.
     """
-    if not samples or total_secs is None:
+    if not samples:
+        return []
+    if samples[0].time_s is not None:
+        # Fork mode: use the embedded wall time as-is.
+        return [s.time_s or 0.0 for s in samples]
+    if total_secs is None:
         return [0.0] * len(samples)
     final_execs = samples[-1].execs
     if final_execs <= 0:
@@ -149,10 +197,11 @@ def main() -> int:
     log_path = matched[-1]  # latest
     print(f"parsing: {log_path}")
 
-    samples, total_secs = parse_log(log_path)
+    samples, total_secs, mode = parse_log(log_path)
     if not samples:
         print("no progress lines parsed", file=sys.stderr)
         return 1
+    print(f"  log mode:       {mode}")
     print(f"  progress lines: {len(samples)}")
     print(f"  final execs:    {samples[-1].execs:,}")
     print(f"  final cov:      {samples[-1].cov}")

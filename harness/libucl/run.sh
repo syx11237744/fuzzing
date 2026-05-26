@@ -28,7 +28,16 @@ echo "seeds:      $SEEDS"
 echo "findings:   $FINDINGS"
 echo
 
+# fork mode: keep fuzzing through crashes.
+#   -fork=1            parent + 1 worker; worker dies → parent respawns
+#   -ignore_crashes=1  parent doesn't propagate worker's crash exit
+#   -ignore_timeouts=1 same for timeouts
+# Each unique-ish crash still gets saved to FINDINGS via -artifact_prefix,
+# but we'll dedupe by ASan SUMMARY line post-run.
 exec "$BIN" \
+    -fork=1 \
+    -ignore_crashes=1 \
+    -ignore_timeouts=1 \
     -max_total_time=43200 \
     -max_len=4096 \
     -dict="$DICT" \
