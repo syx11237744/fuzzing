@@ -1,3 +1,6 @@
 [submodule "targets/libexpat"]
 	path = targets/libexpat
 	url = https://github.com/libexpat/libexpat.git
+[submodule "targets/libconfig"]
+	path = targets/libconfig
+	url = https://github.com/hyperrealm/libconfig.git
