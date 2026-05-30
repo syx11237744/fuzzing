@@ -7,3 +7,12 @@
 [submodule "targets/libucl"]
 	path = targets/libucl
 	url = https://github.com/vstakhov/libucl.git
+[submodule "targets/targets/cJSON"]
+	path = targets/targets/cJSON
+	url = https://github.com/DaveGamble/cJSON.git
+[submodule "targets/targets/zlib"]
+	path = targets/targets/zlib
+	url = https://github.com/madler/zlib.git
+[submodule "targets/targets/libmicrodns"]
+	path = targets/targets/libmicrodns
+	url = https://github.com/videolabs/libmicrodns.git
